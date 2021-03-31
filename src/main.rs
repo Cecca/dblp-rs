@@ -1,5 +1,6 @@
 use anyhow::{anyhow, bail, Context, Result};
 use clap::{App, Arg};
+use copypasta::{ClipboardContext, ClipboardProvider};
 use serde::Deserialize;
 use skim::prelude::*;
 use std::{fs::File, io::BufReader, path::PathBuf};
@@ -156,6 +157,12 @@ fn main() -> Result<()> {
             .open(&bib_path)?;
         writeln!(writer, "{}", bib)?;
     }
+
+    // Put the key in the clipboard
+    ClipboardContext::new()
+        .map_err(|e| anyhow!("getting the clipboard: {}", e))?
+        .set_contents(format!("DBLP:{}", selection.key))
+        .map_err(|e| anyhow!("pasting to clipboard: {}", e))?;
 
     Ok(())
 }
