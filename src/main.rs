@@ -67,7 +67,15 @@ fn underline(s: &str) -> String {
 
 impl SkimItem for DblpHitInfo {
     fn text(&self) -> Cow<'_, str> {
-        Cow::Borrowed(&self.title)
+        Cow::Owned(format!(
+            "{} {}",
+            self.title,
+            self.authors.as_vec().join(" ")
+        ))
+    }
+
+    fn display<'a>(&'a self, _context: DisplayContext<'a>) -> AnsiString<'a> {
+        AnsiString::from(self.title.clone())
     }
 
     fn preview(&self, _context: PreviewContext) -> ItemPreview {
