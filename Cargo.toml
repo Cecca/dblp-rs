@@ -1,0 +1,20 @@
+[package]
+name = "dblp-rs"
+version = "0.1.0"
+authors = ["Matteo Ceccarello <mceccarello@unibz.it>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+tokio = { version = "1.4", features = ["full"] }
+reqwest = { version = "0.11", features = ["blocking", "json"] }
+anyhow = "1"
+serde = { version = "1.0", features = ["derive"] }
+skim = "0.9"
+clap = "2.33"
+
+[[bin]]
+name = "dblp"
+path = "src/main.rs"
+
