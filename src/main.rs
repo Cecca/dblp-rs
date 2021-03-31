@@ -130,17 +130,18 @@ fn main() -> Result<()> {
         .collect();
     let query = query.join("+");
 
-    let resp: DblpResponse = reqwest::blocking::get(format!(
+    let resp: DblpResponse = ureq::get(&format!(
         "http://dblp.org/search/publ/api?q={}&format=json",
         query
-    ))?
-    .json()?;
+    ))
+    .call()?
+    .into_json()?;
 
     let selection = show_and_select(resp.matches())?;
 
     let bib_path = PathBuf::from(matches.value_of("bibtex").context("missing bibtex file")?);
     if !is_present(&bib_path, &selection)? {
-        let bib = reqwest::blocking::get(selection.bib_url())?.text()?;
+        let bib = ureq::get(&selection.bib_url()).call()?.into_string()?;
         let mut writer = OpenOptions::new()
             .create(true)
             .append(true)
