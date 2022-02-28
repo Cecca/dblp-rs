@@ -1,5 +1,6 @@
+use biblatex::*;
 use anyhow::{anyhow, bail, Context, Result};
-use clap::{App, Arg};
+use clap::{Arg, Command};
 use copypasta::{ClipboardContext, ClipboardProvider};
 use serde::Deserialize;
 use skim::prelude::*;
@@ -120,17 +121,61 @@ enum DblpAuthorList {
 }
 
 fn main() -> Result<()> {
-    let matches = App::new("dblp")
+    let convert_str = "convert".to_owned();
+    if let Some(_convert) = std::env::args().nth(1) {
+        let matches = Command::new("convert")
+            .arg(
+                Arg::new("bibtex")
+                    .short('b')
+                    .takes_value(true)
+                    .required(true),
+            )
+            .arg(
+                Arg::new("to")
+                    .takes_value(true)
+                    .required(true)
+                    .possible_values(&["condensed", "standard"])
+            ).get_matches_from(std::env::args().filter(|a| a != &convert_str)); 
+        let bibtype = match matches.value_of("to").unwrap() {
+            "condensed" => BibType::Condensed,
+            "standard" => BibType::Standard,
+            _ => panic!()
+        };
+
+        let bib_path = PathBuf::from(matches.value_of("bibtex").context("missing bibtex file")?);
+        let mut f = File::open(bib_path)?;
+        let mut src = String::new();
+        f.read_to_string(&mut src)?;
+        let bibliography = Bibliography::parse(&src).unwrap();
+        for entry in bibliography.iter() {
+            if entry.key.starts_with("DBLP") {
+                let k = entry.key.replace("DBLP:", "");
+                let param = match bibtype {
+                    BibType::Standard => "?param=1",
+                    BibType::Condensed => "?param=0",
+                };
+                let url = format!("https://dblp.org/rec/{}.bib{}", k, param);
+                let bib = ureq::get(&url).call()?.into_string()?;
+                println!("{}\n", bib);
+            } else {
+                println!("{}\n", entry.to_bibtex_string());
+            }
+        }
+
+
+        return Ok(())
+    }
+    let matches = Command::new("dblp")
         .version("0.1")
         .author("Matteo Ceccarello")
         .about("Easily query DBLP from the command line")
         .arg(
-            Arg::with_name("bibtex")
-                .short("b")
+            Arg::new("bibtex")
+                .short('b')
                 .takes_value(true)
                 .required(true),
         )
-        .arg(Arg::with_name("query").multiple(true).required(true))
+        .arg(Arg::new("query").multiple_values(true).required(true))
         .get_matches();
 
     let query: Vec<&str> = matches
