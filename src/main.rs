@@ -34,6 +34,11 @@ struct DblpHit {
     info: DblpHitInfo,
 }
 
+enum BibType {
+    Standard,
+    Condensed,
+}
+
 #[derive(Deserialize, Debug, Clone)]
 struct DblpHitInfo {
     key: String,
@@ -49,8 +54,11 @@ struct DblpHitInfo {
 }
 
 impl DblpHitInfo {
-    fn bib_url(&self) -> String {
-        format!("{}.bib", self.url)
+    fn bib_url(&self, bibtype: BibType) -> String {
+        match bibtype {
+            Standard => format!("{}.bib?param=1", self.url),
+            Condensed => format!("{}.bib?param=0", self.url),
+        }
     }
 
     fn get_key(&self) -> String {
@@ -150,7 +158,7 @@ fn main() -> Result<()> {
 
     let bib_path = PathBuf::from(matches.value_of("bibtex").context("missing bibtex file")?);
     if !is_present(&bib_path, &selection)? {
-        let bib = ureq::get(&selection.bib_url()).call()?.into_string()?;
+        let bib = ureq::get(&selection.bib_url(BibType::Standard)).call()?.into_string()?;
         let mut writer = OpenOptions::new()
             .create(true)
             .append(true)
