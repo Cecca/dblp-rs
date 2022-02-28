@@ -19,7 +19,6 @@ impl DblpResponse {
 
 #[derive(Deserialize, Debug)]
 struct DblpResult {
-    query: String,
     hits: DblpHits,
 }
 
@@ -30,7 +29,6 @@ struct DblpHits {
 
 #[derive(Deserialize, Debug)]
 struct DblpHit {
-    url: String,
     info: DblpHitInfo,
 }
 
@@ -45,19 +43,15 @@ struct DblpHitInfo {
     authors: DblpAuthorEntry,
     title: String,
     venue: String,
-    volume: Option<String>,
-    number: Option<String>,
     year: String,
-    #[serde(rename = "type")]
-    entry_type: String,
     url: String,
 }
 
 impl DblpHitInfo {
     fn bib_url(&self, bibtype: BibType) -> String {
         match bibtype {
-            Standard => format!("{}.bib?param=1", self.url),
-            Condensed => format!("{}.bib?param=0", self.url),
+            BibType::Standard => format!("{}.bib?param=1", self.url),
+            BibType::Condensed => format!("{}.bib?param=0", self.url),
         }
     }
 
