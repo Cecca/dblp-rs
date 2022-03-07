@@ -122,7 +122,7 @@ enum DblpAuthorList {
 
 fn main() -> Result<()> {
     let convert_str = "convert".to_owned();
-    if let Some(_convert) = std::env::args().nth(1) {
+    if let Some("convert") = std::env::args().nth(1).as_ref().map(|s| s.as_ref()) {
         let matches = Command::new("convert")
             .arg(
                 Arg::new("bibtex")
