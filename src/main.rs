@@ -1,5 +1,5 @@
-use biblatex::*;
 use anyhow::{anyhow, bail, Context, Result};
+use biblatex::*;
 use clap::{Arg, Command};
 use copypasta::{ClipboardContext, ClipboardProvider};
 use serde::Deserialize;
@@ -120,6 +120,28 @@ enum DblpAuthorList {
     List(Vec<DblpAuthor>),
 }
 
+/// gets the path to the only bibtex file in a directory. If there is none
+/// or if there are multiple, return None
+fn get_unique_bib() -> Result<Option<PathBuf>> {
+    let paths: Vec<PathBuf> = std::fs::read_dir(".")?
+        .filter_map(|s| {
+            let p = s.as_ref().unwrap().path();
+            if let Some(ext) = p.extension() {
+                if ext == "bib" {
+                    return Some(p);
+                }
+            }
+            None
+        })
+        .collect();
+
+    if paths.len() == 1 {
+        Ok(Some(paths[0].clone()))
+    } else {
+        Ok(None)
+    }
+}
+
 fn main() -> Result<()> {
     let convert_str = "convert".to_owned();
     if let Some("convert") = std::env::args().nth(1).as_ref().map(|s| s.as_ref()) {
@@ -134,12 +156,13 @@ fn main() -> Result<()> {
                 Arg::new("to")
                     .takes_value(true)
                     .required(true)
-                    .possible_values(&["condensed", "standard"])
-            ).get_matches_from(std::env::args().filter(|a| a != &convert_str)); 
+                    .possible_values(&["condensed", "standard"]),
+            )
+            .get_matches_from(std::env::args().filter(|a| a != &convert_str));
         let bibtype = match matches.value_of("to").unwrap() {
             "condensed" => BibType::Condensed,
             "standard" => BibType::Standard,
-            _ => panic!()
+            _ => panic!(),
         };
 
         let bib_path = PathBuf::from(matches.value_of("bibtex").context("missing bibtex file")?);
@@ -162,8 +185,7 @@ fn main() -> Result<()> {
             }
         }
 
-
-        return Ok(())
+        return Ok(());
     }
     let matches = Command::new("dblp")
         .version("0.1")
@@ -173,10 +195,16 @@ fn main() -> Result<()> {
             Arg::new("bibtex")
                 .short('b')
                 .takes_value(true)
-                .required(true),
+                .required(false),
         )
         .arg(Arg::new("query").multiple_values(true).required(true))
         .get_matches();
+
+    let bib_path = matches
+        .value_of("bibtex")
+        .map(|s| PathBuf::from(s))
+        .or_else(|| get_unique_bib().unwrap())
+        .context("missing bibtex file")?;
 
     let query: Vec<&str> = matches
         .values_of("query")
@@ -194,10 +222,10 @@ fn main() -> Result<()> {
     .into_json()?;
 
     let selection = show_and_select(resp.matches())?;
-
-    let bib_path = PathBuf::from(matches.value_of("bibtex").context("missing bibtex file")?);
     if !is_present(&bib_path, &selection)? {
-        let bib = ureq::get(&selection.bib_url(BibType::Standard)).call()?.into_string()?;
+        let bib = ureq::get(&selection.bib_url(BibType::Standard))
+            .call()?
+            .into_string()?;
         let mut writer = OpenOptions::new()
             .create(true)
             .append(true)
