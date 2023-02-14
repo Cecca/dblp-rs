@@ -4,7 +4,7 @@ Some tools to query DBLP from the command line, with fuzzy matching. Also allows
 
 ![demo image](demo.svg)
 
-# Installation
+## Installation
 
 To install this software you need the Rust toolchain, which you can obtain by following instructions here: https://rustup.rs/
 
