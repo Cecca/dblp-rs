@@ -197,6 +197,12 @@ fn main() -> Result<()> {
                 .takes_value(true)
                 .required(false),
         )
+        .arg(
+            Arg::new("print")
+                .short('p')
+                .long("pring")
+                .action(clap::ArgAction::SetTrue)
+        )
         .arg(Arg::new("query").multiple_values(true).required(true))
         .get_matches();
 
@@ -222,6 +228,14 @@ fn main() -> Result<()> {
     .into_json()?;
 
     let selection = show_and_select(resp.matches())?;
+    if matches.get_flag("print") {
+        let bib = ureq::get(&selection.bib_url(BibType::Standard))
+            .call()?
+            .into_string()?;
+        println!("{}", bib);
+        return Ok(());
+    }
+
     if !is_present(&bib_path, &selection)? {
         let bib = ureq::get(&selection.bib_url(BibType::Standard))
             .call()?
