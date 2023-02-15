@@ -200,7 +200,7 @@ fn main() -> Result<()> {
         .arg(
             Arg::new("print")
                 .short('p')
-                .long("pring")
+                .long("print")
                 .action(clap::ArgAction::SetTrue)
         )
         .arg(Arg::new("query").multiple_values(true).required(true))
