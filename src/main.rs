@@ -4,8 +4,10 @@ use clap::{Arg, Command};
 use copypasta::{ClipboardContext, ClipboardProvider};
 use serde::Deserialize;
 use skim::prelude::*;
+use std::collections::{BTreeMap, HashMap};
 use std::{fs::File, io::BufReader, path::PathBuf};
 use std::{fs::OpenOptions, io::prelude::*};
+use ureq::Response;
 
 #[derive(Deserialize, Debug)]
 struct DblpResponse {
@@ -143,6 +145,45 @@ fn get_unique_bib() -> Result<Option<PathBuf>> {
 }
 
 fn main() -> Result<()> {
+    if let Some("authors-html") = std::env::args().nth(1).as_ref().map(|s| s.as_ref()) {
+        let from_year: usize = std::env::args()
+            .nth(2)
+            .context("expecting <FROM YEAR>")?
+            .parse::<usize>()?;
+        let authors: Vec<String> = std::env::args().skip(3).collect();
+        let mut bibs: BTreeMap<usize, BTreeMap<String, DblpHitInfo>> = Default::default();
+        for author in authors {
+            let resp: DblpResponse = ureq::get(&format!(
+                "http://dblp.org/search/publ/api?q=author:{}:&format=json",
+                author
+            ))
+            .call()?
+            .into_json()?;
+            for entry in resp.matches() {
+                let year = entry.year.parse::<usize>()?;
+                let handle = bibs.entry(year).or_default();
+                handle.entry(entry.key.clone()).or_insert(entry);
+            }
+        }
+
+        for (year, year_entry) in bibs.range(from_year..).rev() {
+            println!("<h3 class='mb-0'>{:?}</h3>\n<ul>", year);
+            for (key, entry) in year_entry {
+                if !key.contains("abs") {
+                    println!(
+                        "  <li>{} <a href='{}'><strong>{}</strong></a>. <span style='font-style:italic'>{}</span></li>",
+                        entry.authors.as_vec().join(", ").replace(" 0001", ""),
+                        entry.url,
+                        entry.title,
+                        entry.venue
+                    );
+                }
+            }
+            println!("</ul>");
+        }
+
+        return Ok(());
+    }
     let convert_str = "convert".to_owned();
     if let Some("convert") = std::env::args().nth(1).as_ref().map(|s| s.as_ref()) {
         let matches = Command::new("convert")
@@ -201,7 +242,7 @@ fn main() -> Result<()> {
             Arg::new("print")
                 .short('p')
                 .long("print")
-                .action(clap::ArgAction::SetTrue)
+                .action(clap::ArgAction::SetTrue),
         )
         .arg(Arg::new("query").multiple_values(true).required(true))
         .get_matches();
@@ -220,12 +261,20 @@ fn main() -> Result<()> {
         .collect();
     let query = query.join("+");
 
-    let resp: DblpResponse = ureq::get(&format!(
+    let resp: Response = match ureq::get(&format!(
         "http://dblp.org/search/publ/api?q={}&format=json",
         query
     ))
-    .call()?
-    .into_json()?;
+    .call()
+    {
+        Err(ureq::Error::Status(500, _)) => ureq::get(&format!(
+            "http://dblp.uni-trier.de/search/publ/api?q={}&format=json",
+            query
+        ))
+        .call(),
+        other => other,
+    }?;
+    let resp: DblpResponse = resp.into_json()?;
 
     let selection = show_and_select(resp.matches())?;
     if matches.get_flag("print") {
