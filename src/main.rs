@@ -154,7 +154,7 @@ fn main() -> Result<()> {
         let mut bibs: BTreeMap<usize, BTreeMap<String, DblpHitInfo>> = Default::default();
         for author in authors {
             let resp: DblpResponse = ureq::get(&format!(
-                "http://dblp.org/search/publ/api?q=author:{}:&format=json",
+                "http://dblp.uni-trier.de/search/publ/api?q=author:{}:&format=json",
                 author
             ))
             .call()?
@@ -218,7 +218,7 @@ fn main() -> Result<()> {
                     BibType::Standard => "?param=1",
                     BibType::Condensed => "?param=0",
                 };
-                let url = format!("https://dblp.org/rec/{}.bib{}", k, param);
+                let url = format!("https://dblp.uni-trier.de/rec/{}.bib{}", k, param);
                 let bib = ureq::get(&url).call()?.into_string()?;
                 println!("{}\n", bib);
             } else {
@@ -261,20 +261,31 @@ fn main() -> Result<()> {
         .collect();
     let query = query.join("+");
 
-    let resp: Response = match ureq::get(&format!(
-        "http://dblp.org/search/publ/api?q={}&format=json",
+    let resp: DblpResponse = ureq::get(&format!(
+        "http://dblp.uni-trier.de/search/publ/api?q={}&format=json",
         query
     ))
-    .call()
-    {
-        Err(ureq::Error::Status(500, _)) => ureq::get(&format!(
-            "http://dblp.uni-trier.de/search/publ/api?q={}&format=json",
-            query
-        ))
-        .call(),
-        other => other,
-    }?;
-    let resp: DblpResponse = resp.into_json()?;
+    .call()?
+    .into_json()?;
+
+    // let resp: Response = match ureq::get(&format!(
+    //     "http://dblp.org/search/publ/api?q={}&format=json",
+    //     query
+    // ))
+    // .call()
+    // {
+    //     Err(ureq::Error::Status(500, _)) => {
+    //         eprintln!("Falling back to http://dblp.uni-trier.de");
+    //         ureq::get(&format!(
+    //             "http://dblp.uni-trier.de/search/publ/api?q={}&format=json",
+    //             query
+    //         ))
+    //         .call()
+    //     }
+    //     other => other,
+    // }?;
+    // let resp_descr = format!("{:?}", resp);
+    // let resp: DblpResponse = resp.into_json().context(resp_descr)?;
 
     let selection = show_and_select(resp.matches())?;
     if matches.get_flag("print") {
