@@ -154,15 +154,10 @@ impl Cli {
             .context("missing bibtex file")
     }
 
-    // fn get_query(&self) -> String {
-    //     let query: Vec<&str> = self
-    //         .query
-    //         .iter()
-    //         .flat_map(|v| v.split(" "))
-    //         .map(|v| v.trim())
-    //         .collect();
-    //     query.join("+")
-    // }
+    fn get_backup_bib_path(&self) -> Result<PathBuf> {
+        let orig = self.get_bib_path()?;
+        Ok(orig.with_extension("bib.bak"))
+    }
 }
 
 #[derive(Subcommand)]
@@ -212,9 +207,19 @@ fn main() -> Result<()> {
         }
         Actions::Convert { to } => {
             // TODO: write inplace
-            let mut f = File::open(bib_path)?;
+            let mut f = File::open(&bib_path)?;
             let mut src = String::new();
             f.read_to_string(&mut src)?;
+            drop(f);
+
+            // backup the content
+            let mut f = File::create(cli.get_backup_bib_path()?)?;
+            writeln!(f, "{}", src)?;
+            drop(f);
+
+            // overwrite the file
+            let mut f = File::create(bib_path)?;
+
             let bibliography = Bibliography::parse(&src).unwrap();
             for entry in bibliography.iter() {
                 if entry.key.starts_with("DBLP") {
@@ -225,9 +230,9 @@ fn main() -> Result<()> {
                     };
                     let url = format!("https://dblp.uni-trier.de/rec/{}.bib{}", k, param);
                     let bib = ureq::get(&url).call()?.into_string()?;
-                    println!("{}\n", bib);
+                    writeln!(f, "{}\n", bib)?;
                 } else {
-                    println!("{:?}\n", entry.to_bibtex_string());
+                    writeln!(f, "{}\n", entry.to_bibtex_string().map_err(|e| anyhow!(e))?)?;
                 }
             }
         }
