@@ -172,6 +172,15 @@ enum Format {
     Standard,
 }
 
+impl Format {
+    fn get_param(&self) -> &str {
+        match self {
+            Format::Standard => "?param=1",
+            Format::Condensed => "?param=0",
+        }
+    }
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     let bib_path = cli.get_bib_path()?;
@@ -183,10 +192,12 @@ fn main() -> Result<()> {
                 .flat_map(|v| v.split(" "))
                 .map(|v| v.trim())
                 .collect();
+            let bibformat = Format::Condensed;
             let query = query.join("+");
             let resp: DblpResponse = ureq::get(&format!(
-                "http://dblp.org/search/publ/api?q={}&format=json",
-                query
+                "http://dblp.org/search/publ/api?q={}&format=json&{}",
+                query,
+                bibformat.get_param()
             ))
             .call()?
             .into_json()?;
@@ -224,11 +235,7 @@ fn main() -> Result<()> {
             for entry in bibliography.iter() {
                 if entry.key.starts_with("DBLP") {
                     let k = entry.key.replace("DBLP:", "");
-                    let param = match to {
-                        Format::Standard => "?param=1",
-                        Format::Condensed => "?param=0",
-                    };
-                    let url = format!("https://dblp.uni-trier.de/rec/{}.bib{}", k, param);
+                    let url = format!("https://dblp.uni-trier.de/rec/{}.bib{}", k, to.get_param());
                     let bib = ureq::get(&url).call()?.into_string()?;
                     writeln!(f, "{}\n", bib)?;
                 } else {
