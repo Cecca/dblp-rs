@@ -1,9 +1,8 @@
 use anyhow::{anyhow, bail, Context, Result};
 use biblatex::*;
-use clap::{Arg, Command};
+use clap::{Parser, Subcommand, ValueEnum};
 use serde::Deserialize;
 use skim::prelude::*;
-use std::collections::BTreeMap;
 use std::{fs::File, io::BufReader, path::PathBuf};
 use std::{fs::OpenOptions, io::prelude::*};
 
@@ -33,11 +32,6 @@ struct DblpHit {
     info: DblpHitInfo,
 }
 
-enum BibType {
-    Standard,
-    Condensed,
-}
-
 #[derive(Deserialize, Debug, Clone)]
 struct DblpHitInfo {
     key: String,
@@ -49,10 +43,10 @@ struct DblpHitInfo {
 }
 
 impl DblpHitInfo {
-    fn bib_url(&self, bibtype: BibType) -> String {
+    fn bib_url(&self, bibtype: Format) -> String {
         match bibtype {
-            BibType::Standard => format!("{}.bib?param=1", self.url),
-            BibType::Condensed => format!("{}.bib?param=0", self.url),
+            Format::Standard => format!("{}.bib?param=1", self.url),
+            Format::Condensed => format!("{}.bib?param=0", self.url),
         }
     }
 
@@ -142,151 +136,102 @@ fn get_unique_bib() -> Result<Option<PathBuf>> {
     }
 }
 
+#[derive(Parser)]
+struct Cli {
+    #[command(subcommand)]
+    subcommand: Actions,
+
+    #[arg(short, long, value_name = "FILE")]
+    bibtex: Option<String>,
+}
+
+impl Cli {
+    fn get_bib_path(&self) -> Result<PathBuf> {
+        self.bibtex
+            .as_ref()
+            .map(|s| PathBuf::from(s))
+            .or_else(|| get_unique_bib().unwrap())
+            .context("missing bibtex file")
+    }
+
+    // fn get_query(&self) -> String {
+    //     let query: Vec<&str> = self
+    //         .query
+    //         .iter()
+    //         .flat_map(|v| v.split(" "))
+    //         .map(|v| v.trim())
+    //         .collect();
+    //     query.join("+")
+    // }
+}
+
+#[derive(Subcommand)]
+enum Actions {
+    Add { query: Vec<String> },
+    Convert { to: Format },
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+enum Format {
+    Condensed,
+    Standard,
+}
+
 fn main() -> Result<()> {
-    if let Some("authors-html") = std::env::args().nth(1).as_ref().map(|s| s.as_ref()) {
-        let from_year: usize = std::env::args()
-            .nth(2)
-            .context("expecting <FROM YEAR>")?
-            .parse::<usize>()?;
-        let authors: Vec<String> = std::env::args().skip(3).collect();
-        let mut bibs: BTreeMap<usize, BTreeMap<String, DblpHitInfo>> = Default::default();
-        for author in authors {
+    let cli = Cli::parse();
+    let bib_path = cli.get_bib_path()?;
+
+    match cli.subcommand {
+        Actions::Add { query } => {
+            let query: Vec<&str> = query
+                .iter()
+                .flat_map(|v| v.split(" "))
+                .map(|v| v.trim())
+                .collect();
+            let query = query.join("+");
             let resp: DblpResponse = ureq::get(&format!(
-                "http://dblp.uni-trier.de/search/publ/api?q=author:{}:&format=json",
-                author
+                "http://dblp.org/search/publ/api?q={}&format=json",
+                query
             ))
             .call()?
             .into_json()?;
-            for entry in resp.matches() {
-                let year = entry.year.parse::<usize>()?;
-                let handle = bibs.entry(year).or_default();
-                handle.entry(entry.key.clone()).or_insert(entry);
-            }
-        }
 
-        for (year, year_entry) in bibs.range(from_year..).rev() {
-            println!("<h3 class='mb-0'>{:?}</h3>\n<ul>", year);
-            for (key, entry) in year_entry {
-                if !key.contains("abs") {
-                    println!(
-                        "  <li>{} <a href='{}'><strong>{}</strong></a>. <span style='font-style:italic'>{}</span></li>",
-                        entry.authors.as_vec().join(", ").replace(" 0001", ""),
-                        entry.url,
-                        entry.title,
-                        entry.venue
-                    );
+            let selection = show_and_select(resp.matches())?;
+
+            if !is_present(&bib_path, &selection)? {
+                let bib = ureq::get(&selection.bib_url(Format::Standard))
+                    .call()?
+                    .into_string()?;
+                let mut writer = OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&bib_path)?;
+                writeln!(writer, "{}", bib)?;
+            }
+            // TODO: write in clipboard using CLI clipboard program
+        }
+        Actions::Convert { to } => {
+            // TODO: write inplace
+            let mut f = File::open(bib_path)?;
+            let mut src = String::new();
+            f.read_to_string(&mut src)?;
+            let bibliography = Bibliography::parse(&src).unwrap();
+            for entry in bibliography.iter() {
+                if entry.key.starts_with("DBLP") {
+                    let k = entry.key.replace("DBLP:", "");
+                    let param = match to {
+                        Format::Standard => "?param=1",
+                        Format::Condensed => "?param=0",
+                    };
+                    let url = format!("https://dblp.uni-trier.de/rec/{}.bib{}", k, param);
+                    let bib = ureq::get(&url).call()?.into_string()?;
+                    println!("{}\n", bib);
+                } else {
+                    println!("{:?}\n", entry.to_bibtex_string());
                 }
             }
-            println!("</ul>");
         }
-
-        return Ok(());
     }
-    let convert_str = "convert".to_owned();
-    if let Some("convert") = std::env::args().nth(1).as_ref().map(|s| s.as_ref()) {
-        let matches = Command::new("convert")
-            .arg(
-                Arg::new("bibtex")
-                    .short('b')
-                    .takes_value(true)
-                    .required(true),
-            )
-            .arg(
-                Arg::new("to")
-                    .takes_value(true)
-                    .required(true)
-                    .possible_values(&["condensed", "standard"]),
-            )
-            .get_matches_from(std::env::args().filter(|a| a != &convert_str));
-        let bibtype = match matches.value_of("to").unwrap() {
-            "condensed" => BibType::Condensed,
-            "standard" => BibType::Standard,
-            _ => panic!(),
-        };
-
-        let bib_path = PathBuf::from(matches.value_of("bibtex").context("missing bibtex file")?);
-        let mut f = File::open(bib_path)?;
-        let mut src = String::new();
-        f.read_to_string(&mut src)?;
-        let bibliography = Bibliography::parse(&src).unwrap();
-        for entry in bibliography.iter() {
-            if entry.key.starts_with("DBLP") {
-                let k = entry.key.replace("DBLP:", "");
-                let param = match bibtype {
-                    BibType::Standard => "?param=1",
-                    BibType::Condensed => "?param=0",
-                };
-                let url = format!("https://dblp.uni-trier.de/rec/{}.bib{}", k, param);
-                let bib = ureq::get(&url).call()?.into_string()?;
-                println!("{}\n", bib);
-            } else {
-                println!("{}\n", entry.to_bibtex_string());
-            }
-        }
-
-        return Ok(());
-    }
-    let matches = Command::new("dblp")
-        .version("0.1")
-        .author("Matteo Ceccarello")
-        .about("Easily query DBLP from the command line")
-        .arg(
-            Arg::new("bibtex")
-                .short('b')
-                .takes_value(true)
-                .required(false),
-        )
-        .arg(
-            Arg::new("print")
-                .short('p')
-                .long("print")
-                .action(clap::ArgAction::SetTrue),
-        )
-        .arg(Arg::new("query").multiple_values(true).required(true))
-        .get_matches();
-
-    let bib_path = matches
-        .value_of("bibtex")
-        .map(|s| PathBuf::from(s))
-        .or_else(|| get_unique_bib().unwrap())
-        .context("missing bibtex file")?;
-
-    let query: Vec<&str> = matches
-        .values_of("query")
-        .context("missing query")?
-        .flat_map(|v| v.split(" "))
-        .map(|v| v.trim())
-        .collect();
-    let query = query.join("+");
-
-    let resp: DblpResponse = ureq::get(&format!(
-        "http://dblp.uni-trier.de/search/publ/api?q={}&format=json",
-        query
-    ))
-    .call()?
-    .into_json()?;
-
-    let selection = show_and_select(resp.matches())?;
-    if matches.get_flag("print") {
-        let bib = ureq::get(&selection.bib_url(BibType::Standard))
-            .call()?
-            .into_string()?;
-        println!("{}", bib);
-        return Ok(());
-    }
-
-    if !is_present(&bib_path, &selection)? {
-        let bib = ureq::get(&selection.bib_url(BibType::Standard))
-            .call()?
-            .into_string()?;
-        let mut writer = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&bib_path)?;
-        writeln!(writer, "{}", bib)?;
-    }
-
-    // TODO: write in clipboard using CLI clipboard program
 
     Ok(())
 }
