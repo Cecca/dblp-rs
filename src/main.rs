@@ -6,6 +6,8 @@ use skim::prelude::*;
 use std::{fs::File, io::BufReader, path::PathBuf};
 use std::{fs::OpenOptions, io::prelude::*};
 
+const URLS: [&str; 2] = ["https://dblp.org", "https://dblp.uni-trier.de"];
+
 #[derive(Deserialize, Debug)]
 struct DblpResponse {
     result: DblpResult,
@@ -194,13 +196,21 @@ fn main() -> Result<()> {
                 .collect();
             let bibformat = Format::Condensed;
             let query = query.join("+");
-            let resp: DblpResponse = ureq::get(&format!(
-                "http://dblp.org/search/publ/api?q={}&format=json&{}",
-                query,
-                bibformat.get_param()
-            ))
-            .call()?
-            .into_json()?;
+            let resp: DblpResponse = URLS
+                .iter()
+                .map(|url| {
+                    let url = format!(
+                        "{}/search/publ/api?q={}&format=json&{}",
+                        url,
+                        query,
+                        bibformat.get_param()
+                    );
+                    ureq::get(&url).call()
+                })
+                .filter(|r| r.is_ok())
+                .next()
+                .context("no successful response")??
+                .into_json()?;
 
             let selection = show_and_select(resp.matches())?;
 
