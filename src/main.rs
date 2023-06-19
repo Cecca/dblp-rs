@@ -1,13 +1,11 @@
 use anyhow::{anyhow, bail, Context, Result};
 use biblatex::*;
 use clap::{Arg, Command};
-use copypasta::{ClipboardContext, ClipboardProvider};
 use serde::Deserialize;
 use skim::prelude::*;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::{fs::File, io::BufReader, path::PathBuf};
 use std::{fs::OpenOptions, io::prelude::*};
-use ureq::Response;
 
 #[derive(Deserialize, Debug)]
 struct DblpResponse {
@@ -268,25 +266,6 @@ fn main() -> Result<()> {
     .call()?
     .into_json()?;
 
-    // let resp: Response = match ureq::get(&format!(
-    //     "http://dblp.org/search/publ/api?q={}&format=json",
-    //     query
-    // ))
-    // .call()
-    // {
-    //     Err(ureq::Error::Status(500, _)) => {
-    //         eprintln!("Falling back to http://dblp.uni-trier.de");
-    //         ureq::get(&format!(
-    //             "http://dblp.uni-trier.de/search/publ/api?q={}&format=json",
-    //             query
-    //         ))
-    //         .call()
-    //     }
-    //     other => other,
-    // }?;
-    // let resp_descr = format!("{:?}", resp);
-    // let resp: DblpResponse = resp.into_json().context(resp_descr)?;
-
     let selection = show_and_select(resp.matches())?;
     if matches.get_flag("print") {
         let bib = ureq::get(&selection.bib_url(BibType::Standard))
@@ -307,11 +286,7 @@ fn main() -> Result<()> {
         writeln!(writer, "{}", bib)?;
     }
 
-    // Put the key in the clipboard
-    ClipboardContext::new()
-        .map_err(|e| anyhow!("getting the clipboard: {}", e))?
-        .set_contents(format!("DBLP:{}", selection.key))
-        .map_err(|e| anyhow!("pasting to clipboard: {}", e))?;
+    // TODO: write in clipboard using CLI clipboard program
 
     Ok(())
 }
