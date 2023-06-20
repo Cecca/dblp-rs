@@ -183,6 +183,21 @@ impl Format {
     }
 }
 
+fn write_clipboard(what: &str) -> Result<()> {
+    fn run(cmd: &str, what: &str) -> Result<()> {
+        let mut child = std::process::Command::new(cmd)
+            .stdin(std::process::Stdio::piped())
+            .spawn()?;
+        write!(child.stdin.take().context("no standard input")?, "{}", what)?;
+        Ok(())
+    }
+    ["wl-copy", "pbcopy"]
+        .iter()
+        .map(|cmd| run(cmd, what))
+        .next()
+        .context("no clipboard command ran successfully")?
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     let bib_path = cli.get_bib_path()?;
@@ -224,10 +239,9 @@ fn main() -> Result<()> {
                     .open(&bib_path)?;
                 writeln!(writer, "{}", bib)?;
             }
-            // TODO: write in clipboard using CLI clipboard program
+            write_clipboard(&format!("DBLP:{}", selection.key))?;
         }
         Actions::Convert { to } => {
-            // TODO: write inplace
             let mut f = File::open(&bib_path)?;
             let mut src = String::new();
             f.read_to_string(&mut src)?;
