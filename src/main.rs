@@ -165,6 +165,7 @@ impl Cli {
 #[derive(Subcommand)]
 enum Actions {
     Add { query: Vec<String> },
+    Clip { query: Vec<String> },
     Convert { to: Format },
 }
 
@@ -200,10 +201,11 @@ fn write_clipboard(what: &str) -> Result<()> {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    let bib_path = cli.get_bib_path()?;
+    let bib_path = cli.get_bib_path();
 
     match cli.subcommand {
         Actions::Add { query } => {
+            let bib_path = bib_path?;
             let query: Vec<&str> = query
                 .iter()
                 .flat_map(|v| v.split(" "))
@@ -241,7 +243,38 @@ fn main() -> Result<()> {
             }
             write_clipboard(&format!("DBLP:{}", selection.key))?;
         }
+        Actions::Clip { query } => {
+            let query: Vec<&str> = query
+                .iter()
+                .flat_map(|v| v.split(" "))
+                .map(|v| v.trim())
+                .collect();
+            let bibformat = Format::Condensed;
+            let query = query.join("+");
+            let resp: DblpResponse = URLS
+                .iter()
+                .map(|url| {
+                    let url = format!(
+                        "{}/search/publ/api?q={}&format=json&{}",
+                        url,
+                        query,
+                        bibformat.get_param()
+                    );
+                    ureq::get(&url).call()
+                })
+                .filter(|r| r.is_ok())
+                .next()
+                .context("no successful response")??
+                .into_json()?;
+
+            let selection = show_and_select(resp.matches())?;
+            let bib = ureq::get(&selection.bib_url(Format::Standard))
+                .call()?
+                .into_string()?;
+            write_clipboard(&bib)?;
+        }
         Actions::Convert { to } => {
+            let bib_path = bib_path?;
             let mut f = File::open(&bib_path)?;
             let mut src = String::new();
             f.read_to_string(&mut src)?;
