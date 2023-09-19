@@ -290,13 +290,21 @@ fn main() -> Result<()> {
 
             let bibliography = Bibliography::parse(&src).unwrap();
             for entry in bibliography.iter() {
+                let bibstr = entry.to_bibtex_string().map_err(|e| anyhow!(e))?;
+                eprintln!("{}", entry.key);
                 if entry.key.starts_with("DBLP") {
                     let k = entry.key.replace("DBLP:", "");
                     let url = format!("https://dblp.uni-trier.de/rec/{}.bib{}", k, to.get_param());
-                    let bib = ureq::get(&url).call()?.into_string()?;
-                    writeln!(f, "{}\n", bib)?;
+                    if let Err(err) = ureq::get(&url)
+                        .call()
+                        .and_then(|res| Ok(res.into_string()?))
+                        .and_then(|bib| Ok(writeln!(f, "{}\n", bib)?))
+                        .or_else(|_| writeln!(f, "{}\n", bibstr))
+                    {
+                        eprintln!("Error in fetching data for {}: {:?}", entry.key, err);
+                    }
                 } else {
-                    writeln!(f, "{}\n", entry.to_bibtex_string().map_err(|e| anyhow!(e))?)?;
+                    writeln!(f, "{}\n", bibstr)?;
                 }
             }
         }
