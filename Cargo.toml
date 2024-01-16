@@ -10,9 +10,9 @@ anyhow = "1"
 serde = { version = "1.0", features = ["derive"] }
 skim = "0.10"
 clap = { version = "4", features = ["derive"] }
-biblatex = "0.8"
+biblatex = "0.9"
+toml = "0.8.8"
 
 [[bin]]
 name = "dblp"
 path = "src/main.rs"
-
