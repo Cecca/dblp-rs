@@ -1,137 +1,12 @@
 use anyhow::{anyhow, bail, Context, Result};
 use biblatex::*;
-use clap::{Parser, Subcommand, ValueEnum};
-use serde::Deserialize;
+use clap::{Parser, Subcommand};
 use skim::prelude::*;
 use std::{fs::File, io::BufReader, path::PathBuf};
 use std::{fs::OpenOptions, io::prelude::*};
 
-const URLS: [&str; 2] = ["https://dblp.org", "https://dblp.uni-trier.de"];
-
-#[derive(Deserialize, Debug)]
-struct DblpResponse {
-    result: DblpResult,
-}
-
-impl DblpResponse {
-    fn matches(&self) -> impl Iterator<Item = DblpHitInfo> + '_ {
-        self.result.hits.hit.iter().map(|hit| hit.info.clone())
-    }
-
-    fn query(query: &str, bibformat: Format) -> Result<Self> {
-        URLS.iter()
-            .map(|url| {
-                let url = format!(
-                    "{}/search/publ/api?q={}&format=json&{}",
-                    url,
-                    query,
-                    bibformat.get_param()
-                );
-                ureq::get(&url).call()
-            })
-            .find(|r| r.is_ok())
-            .context("no successful response")??
-            .into_json()
-            .context("error converting from json")
-    }
-}
-
-#[derive(Deserialize, Debug)]
-struct DblpResult {
-    hits: DblpHits,
-}
-
-#[derive(Deserialize, Debug)]
-struct DblpHits {
-    hit: Vec<DblpHit>,
-}
-
-#[derive(Deserialize, Debug)]
-struct DblpHit {
-    info: DblpHitInfo,
-}
-
-#[derive(Deserialize, Debug, Clone)]
-struct DblpHitInfo {
-    key: String,
-    authors: DblpAuthorEntry,
-    title: String,
-    venue: String,
-    year: String,
-    url: String,
-}
-
-impl DblpHitInfo {
-    fn bib_url(&self, bibtype: Format) -> String {
-        match bibtype {
-            Format::Standard => format!("{}.bib?param=1", self.url),
-            Format::Condensed => format!("{}.bib?param=0", self.url),
-        }
-    }
-
-    fn get_key(&self) -> String {
-        format!("DBLP:{}", self.key)
-    }
-}
-
-fn bold(s: &str) -> String {
-    format!("\x1b[1m{}\x1b[0m", s)
-}
-
-fn underline(s: &str) -> String {
-    format!("\x1b[4m{}\x1b[0m", s)
-}
-
-impl SkimItem for DblpHitInfo {
-    fn text(&self) -> Cow<'_, str> {
-        Cow::Owned(format!(
-            "{} {}",
-            self.title,
-            self.authors.as_vec().join(" ")
-        ))
-    }
-
-    fn display<'a>(&'a self, _context: DisplayContext<'a>) -> AnsiString<'a> {
-        AnsiString::from(self.title.clone())
-    }
-
-    fn preview(&self, _context: PreviewContext) -> ItemPreview {
-        ItemPreview::AnsiText(format!(
-            "{}\n{}\n{} {}",
-            underline(&self.authors.as_vec().join(", ")),
-            bold(&self.title),
-            self.venue,
-            self.year
-        ))
-    }
-}
-
-#[derive(Deserialize, Debug, Clone)]
-struct DblpAuthor {
-    #[serde(rename = "text")]
-    name: String,
-}
-
-#[derive(Deserialize, Debug, Clone)]
-struct DblpAuthorEntry {
-    author: DblpAuthorList,
-}
-
-impl DblpAuthorEntry {
-    fn as_vec(&self) -> Vec<String> {
-        match &self.author {
-            DblpAuthorList::Single(author) => vec![author.name.clone()],
-            DblpAuthorList::List(authors) => authors.iter().map(|a| a.name.clone()).collect(),
-        }
-    }
-}
-
-#[derive(Deserialize, Debug, Clone)]
-#[serde(untagged)]
-enum DblpAuthorList {
-    Single(DblpAuthor),
-    List(Vec<DblpAuthor>),
-}
+mod dblp;
+use crate::dblp::*;
 
 /// gets the path to the only bibtex file in a directory. If there is none
 /// or if there are multiple, return None
@@ -186,19 +61,13 @@ enum Actions {
     Convert { to: Format },
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
-enum Format {
-    Condensed,
-    Standard,
-}
-
-impl Format {
-    fn get_param(&self) -> &str {
-        match self {
-            Format::Standard => "?param=1",
-            Format::Condensed => "?param=0",
-        }
-    }
+fn join_param_string(strings: &[String]) -> String {
+    strings
+        .iter()
+        .flat_map(|v| v.split(' '))
+        .map(|v| v.trim())
+        .collect::<Vec<&str>>()
+        .join("+")
 }
 
 fn write_clipboard(what: &str) -> Result<()> {
@@ -223,13 +92,8 @@ fn main() -> Result<()> {
     match cli.subcommand {
         Actions::Add { query } => {
             let bib_path = bib_path?;
-            let query: Vec<&str> = query
-                .iter()
-                .flat_map(|v| v.split(' '))
-                .map(|v| v.trim())
-                .collect();
+            let query = join_param_string(&query);
             let bibformat = Format::Condensed;
-            let query = query.join("+");
             let resp = DblpResponse::query(&query, bibformat)?;
             let selection = show_and_select(resp.matches())?;
 
@@ -246,13 +110,8 @@ fn main() -> Result<()> {
             write_clipboard(&format!("DBLP:{}", selection.key))?;
         }
         Actions::Clip { query } => {
-            let query: Vec<&str> = query
-                .iter()
-                .flat_map(|v| v.split(' '))
-                .map(|v| v.trim())
-                .collect();
+            let query = join_param_string(&query);
             let bibformat = Format::Condensed;
-            let query = query.join("+");
             let resp = DblpResponse::query(&query, bibformat)?;
 
             let selection = show_and_select(resp.matches())?;
