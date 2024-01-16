@@ -17,6 +17,23 @@ impl DblpResponse {
     fn matches(&self) -> impl Iterator<Item = DblpHitInfo> + '_ {
         self.result.hits.hit.iter().map(|hit| hit.info.clone())
     }
+
+    fn query(query: &str, bibformat: Format) -> Result<Self> {
+        URLS.iter()
+            .map(|url| {
+                let url = format!(
+                    "{}/search/publ/api?q={}&format=json&{}",
+                    url,
+                    query,
+                    bibformat.get_param()
+                );
+                ureq::get(&url).call()
+            })
+            .find(|r| r.is_ok())
+            .context("no successful response")??
+            .into_json()
+            .context("error converting from json")
+    }
 }
 
 #[derive(Deserialize, Debug)]
@@ -151,7 +168,7 @@ impl Cli {
     fn get_bib_path(&self) -> Result<PathBuf> {
         self.bibtex
             .as_ref()
-            .map(|s| PathBuf::from(s))
+            .map(PathBuf::from)
             .or_else(|| get_unique_bib().unwrap())
             .context("missing bibtex file")
     }
@@ -208,27 +225,12 @@ fn main() -> Result<()> {
             let bib_path = bib_path?;
             let query: Vec<&str> = query
                 .iter()
-                .flat_map(|v| v.split(" "))
+                .flat_map(|v| v.split(' '))
                 .map(|v| v.trim())
                 .collect();
             let bibformat = Format::Condensed;
             let query = query.join("+");
-            let resp: DblpResponse = URLS
-                .iter()
-                .map(|url| {
-                    let url = format!(
-                        "{}/search/publ/api?q={}&format=json&{}",
-                        url,
-                        query,
-                        bibformat.get_param()
-                    );
-                    ureq::get(&url).call()
-                })
-                .filter(|r| r.is_ok())
-                .next()
-                .context("no successful response")??
-                .into_json()?;
-
+            let resp = DblpResponse::query(&query, bibformat)?;
             let selection = show_and_select(resp.matches())?;
 
             if !is_present(&bib_path, &selection)? {
@@ -246,26 +248,12 @@ fn main() -> Result<()> {
         Actions::Clip { query } => {
             let query: Vec<&str> = query
                 .iter()
-                .flat_map(|v| v.split(" "))
+                .flat_map(|v| v.split(' '))
                 .map(|v| v.trim())
                 .collect();
             let bibformat = Format::Condensed;
             let query = query.join("+");
-            let resp: DblpResponse = URLS
-                .iter()
-                .map(|url| {
-                    let url = format!(
-                        "{}/search/publ/api?q={}&format=json&{}",
-                        url,
-                        query,
-                        bibformat.get_param()
-                    );
-                    ureq::get(&url).call()
-                })
-                .filter(|r| r.is_ok())
-                .next()
-                .context("no successful response")??
-                .into_json()?;
+            let resp = DblpResponse::query(&query, bibformat)?;
 
             let selection = show_and_select(resp.matches())?;
             let bib = ureq::get(&selection.bib_url(Format::Standard))
@@ -317,7 +305,7 @@ fn is_present(path: &PathBuf, item: &DblpHitInfo) -> Result<bool> {
     let bib_key = item.get_key();
 
     if path.is_file() {
-        let reader = BufReader::new(File::open(&path)?);
+        let reader = BufReader::new(File::open(path)?);
         for line in reader.lines() {
             let line = line?;
             if line.contains(&bib_key) {
@@ -325,7 +313,7 @@ fn is_present(path: &PathBuf, item: &DblpHitInfo) -> Result<bool> {
             }
         }
     }
-    return Ok(false);
+    Ok(false)
 }
 
 // copied from https://github.com/Mountlex/xivar/blob/main/src/finder.rs
@@ -352,7 +340,7 @@ where
             output
                 .selected_items
                 .into_iter()
-                .nth(0)
+                .next()
                 .map(move |item| {
                     (*item)
                         .as_any()
