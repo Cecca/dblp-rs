@@ -1,5 +1,5 @@
 /// utilities to interface with DBLP
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use clap::ValueEnum;
 use serde::Deserialize;
 use skim::prelude::*;
@@ -145,4 +145,20 @@ impl DblpAuthorEntry {
 pub enum DblpAuthorList {
     Single(DblpAuthor),
     List(Vec<DblpAuthor>),
+}
+
+pub fn fetch_bibtex(key: &str) -> anyhow::Result<hayagriva::Entry> {
+    let key = key.replace("DBLP:", "");
+    let fmt = Format::Condensed;
+    let k = key.replace("DBLP:", "");
+    let url = format!("https://dblp.uni-trier.de/rec/{}.bib{}", k, fmt.get_param());
+    let resp = ureq::get(&url).call()?;
+    let s = resp.into_string().context("error converting into string")?;
+    let entry = hayagriva::io::from_biblatex_str(&s)
+        .map_err(|e| anyhow!(e.first().unwrap().clone()))
+        .context("parsing bibtex")?
+        .into_iter()
+        .next()
+        .context("getting first bibliography entry")?;
+    Ok(entry)
 }

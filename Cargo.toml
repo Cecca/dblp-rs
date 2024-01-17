@@ -12,6 +12,9 @@ skim = "0.10"
 clap = { version = "4", features = ["derive"] }
 biblatex = "0.9"
 toml = "0.8.8"
+serde_yaml = "0.9.30"
+walkdir = "2.4.0"
+hayagriva = "0.5.1"
 
 [[bin]]
 name = "dblp"

@@ -6,6 +6,7 @@ use std::{fs::File, io::BufReader, path::PathBuf};
 use std::{fs::OpenOptions, io::prelude::*};
 
 mod dblp;
+mod notes;
 use crate::dblp::*;
 
 /// gets the path to the only bibtex file in a directory. If there is none
@@ -56,8 +57,13 @@ impl Cli {
 
 #[derive(Subcommand)]
 enum Actions {
+    /// Add bibliographic info to a bibtex file
     Add { query: Vec<String> },
+    /// Copy a bibtex entry to the clipboard
     Clip { query: Vec<String> },
+    /// Create a markdown file, with metadata, to take notes on a paper
+    Note { query: Vec<String> },
+    /// Convert a bibtex file between `Standard` and `Condensed` format
     Convert { to: Format },
 }
 
@@ -119,6 +125,18 @@ fn main() -> Result<()> {
                 .call()?
                 .into_string()?;
             write_clipboard(&bib)?;
+        }
+        Actions::Note { query } => {
+            let query = join_param_string(&query);
+            let bibformat = Format::Condensed;
+            let resp = DblpResponse::query(&query, bibformat)?;
+            let selection = show_and_select(resp.matches())?;
+            let path = notes::create_notes_file(
+                "/home/matteo/Notes/Papers/",
+                &selection.key,
+                &selection.title,
+            )?;
+            write_clipboard(path.to_str().context("converting path to string")?)?;
         }
         Actions::Convert { to } => {
             let bib_path = bib_path?;
